@@ -56,12 +56,12 @@ class Server:
             if user.is_eligible:
                 user.set_parameters(self.model)
 
-    def add_parameters_with_droprate(self, user, ratio,drop_rate):
+    def add_parameters_with_packet_loss(self, user, ratio, packet_loss):
         model = self.model.parameters()
         for server_param, user_param in zip(self.model.parameters(), user.get_parameters()):
-            mask = torch.full(user_param.size(), 1-drop_rate)
+            mask = torch.full(user_param.size(), 1-packet_loss)
             bernoulli_mask = torch.bernoulli(mask)
-            server_param.data = server_param.data + user_param.data.clone() * bernoulli_mask * ratio
+            server_param.data = server_param.data + user_param.data.clone() * bernoulli_mask * ratio / (1-packet_loss)
     
     def add_parameters(self, user, ratio):
         model = self.model.parameters()
@@ -79,8 +79,18 @@ class Server:
         for user in self.selected_users:
             self.add_parameters(user, user.train_samples / total_train)
 
-    def aggregate_parameters_with_packet_loss(self):
-        pass
+    def aggregate_parameters_with_packet_loss(self, packet_loss):
+        assert (self.users is not None and len(self.users)>0)
+        for param in self.model.parameters():
+            param.data = torch.zeros_like(param.data)
+        total_train = 0
+        for user in self.selected_users:
+            total_train += user.train_samples
+        for user in self.selected_users:
+            self.add_parameters_with_packet_loss(user, user.train_samples / total_train, packet_loss)
+
+
+
 
 
     def global_aggregate_parameters(self):
@@ -100,7 +110,7 @@ class Server:
 
         # aaggregate avergage model with previous model using parameter beta 
         for pre_param, param in zip(previous_param, self.model.parameters()):
-            param.data = (1 - self.beta)*pre_param.data + self.beta*param.data
+            param.data = (1 - self.beta) * pre_param.data + self.beta*param.data
 
     def save_model(self):
         model_path = os.path.join("models", self.dataset)
@@ -179,7 +189,7 @@ class Server:
         for pre_param, param in zip(previous_param, self.model.parameters()):
             param.data = (1 - self.beta)*pre_param.data + self.beta*param.data
     
-    def personalized_aggregate_parameters_with_droprate(self,drop_rate=0):
+    def personalized_aggregate_parameters_with_packet_loss(self, packet_loss=0.0):
         assert (self.users is not None and len(self.users) > 0)
 
         # store previous parameters
@@ -192,14 +202,13 @@ class Server:
             total_train += user.train_samples
 
         for user in self.selected_users:
-            self.add_parameters_with_droprate(user, user.train_samples / total_train,drop_rate)
+            self.add_parameters_with_packet_loss(user, user.train_samples / total_train, packet_loss)
             #self.add_parameters(user, 1 / len(self.selected_users))
 
         # aaggregate avergage model with previous model using parameter beta 
         for pre_param, param in zip(previous_param, self.model.parameters()):
             param.data = (1 - self.beta)*pre_param.data + self.beta*param.data
             
-    # Save loss, accurancy to h5 fiel
     # def save_results(self):
     #     alg = self.dataset + "_" + self.algorithm
     #     alg = alg + "_" + str(self.learning_rate) + "_" + str(self.beta) + "_" + str(self.lamda) + "_" + str(self.num_users) + "u" + "_" + str(self.batch_size) + "b" + "_"+str(self.selected_rate)+"r"+"_" + str(self.local_epochs)

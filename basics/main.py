@@ -44,7 +44,7 @@ def main(dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_
         # select algorithm
         # dataset is passed in the function
         if(algorithm == "FedAvg"):
-            server = FedAvg(device, dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_glob_iters, local_epochs, optimizer, numusers, i, selected_rate,packet_loss)
+            server = FedAvg(device, dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_glob_iters, local_epochs, optimizer, numusers, i, selected_rate, packet_loss)
         
         if(algorithm == "pFedMe"):
             server = pFedMe(device, dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_glob_iters, local_epochs, optimizer, numusers, K, personal_learning_rate, i, selected_rate,packet_loss)
@@ -71,16 +71,16 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=0.005, help="Local learning rate")
     parser.add_argument("--beta", type=float, default=1.0, help="Average moving parameter for pFedMe, or Second learning rate of Per-FedAvg")
     parser.add_argument("--lamda", type=int, default=15, help="Regularization term")
-    parser.add_argument("--num_global_iters", type=int, default=5)
+    parser.add_argument("--num_global_iters", type=int, default=50)
     parser.add_argument("--local_epochs", type=int, default=20)
     parser.add_argument("--optimizer", type=str, default="SGD")
-    parser.add_argument("--algorithm", type=str, default="pFedMe",choices=["pFedMe", "PerAvg", "FedAvg"]) 
+    parser.add_argument("--algorithm", type=str, default="FedAvg",choices=["pFedMe", "PerAvg", "FedAvg"]) 
     parser.add_argument("--numusers", type=int, default=20, help="Number of Users per round")
     parser.add_argument("--K", type=int, default=5, help="Computation steps")
     parser.add_argument("--personal_learning_rate", type=float, default=0.09, help="Persionalized learning rate to caculate theta aproximately using K steps")
     parser.add_argument("--times", type=int, default=1, help="running time")
-    parser.add_argument("--gpu", type=int, default=0, help="Which GPU to run the experiments, -1 mean CPU, 0,1,2 for GPU")
-    parser.add_argument("--selected_rate",type=float, default=0.7, help="The proption of clients that meet the latency requirement" )
+    parser.add_argument("--gpu", type=int, default=-1, help="Which GPU to run the experiments, -1 mean CPU, 0,1,2 for GPU")
+    parser.add_argument("--selected_rate",type=float, default=1.0, help="The proption of clients that meet the latency requirement" )
     parser.add_argument("--packet_loss",default='adaptive',help="the packet loss rate")
     args = parser.parse_args()
 

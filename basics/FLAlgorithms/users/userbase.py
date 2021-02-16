@@ -7,8 +7,12 @@ from torch.utils.data import DataLoader
 import numpy as np
 import copy
 
-def setTransPacketLoss():
-    pass
+class TransPacketSettings:
+    """
+    Using to set packetloss based
+    """
+    def __init__(self):
+        pass
 
 class User:
     """
@@ -35,7 +39,10 @@ class User:
         self.iter_testloader = iter(self.testloader)
 
         # choose the packet loss mode
-        self.packet_loss = setTransPacketLoss() if packet_loss == 'adaptive' else packet_loss
+        if packet_loss == "adaptive":
+            self.packet_loss = TransPacketSettings().set_loginoraml_packet_loss()
+        else:
+            self.packet_loss = packet_loss
 
 
 
