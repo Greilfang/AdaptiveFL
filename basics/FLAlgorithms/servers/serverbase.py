@@ -56,12 +56,14 @@ class Server:
             if user.is_eligible:
                 user.set_parameters(self.model)
 
-    def add_parameters_with_packet_loss(self, user, ratio, packet_loss):
+    def add_parameters_with_packet_loss(self, user, ratio):
         model = self.model.parameters()
+        #print(type(user.packet_loss))
         for server_param, user_param in zip(self.model.parameters(), user.get_parameters()):
-            mask = torch.full(user_param.size(), 1-packet_loss)
+            mask = torch.full(user_param.size(), 1-user.packet_loss)
+            #print(mask)
             bernoulli_mask = torch.bernoulli(mask)
-            server_param.data = server_param.data + user_param.data.clone() * bernoulli_mask * ratio / (1-packet_loss)
+            server_param.data = server_param.data + user_param.data.clone() * bernoulli_mask * ratio / (1-user.packet_loss)
     
     def add_parameters(self, user, ratio):
         model = self.model.parameters()
@@ -79,7 +81,7 @@ class Server:
         for user in self.selected_users:
             self.add_parameters(user, user.train_samples / total_train)
 
-    def aggregate_parameters_with_packet_loss(self, packet_loss):
+    def aggregate_parameters_with_packet_loss(self):
         assert (self.users is not None and len(self.users)>0)
         for param in self.model.parameters():
             param.data = torch.zeros_like(param.data)
@@ -87,7 +89,7 @@ class Server:
         for user in self.selected_users:
             total_train += user.train_samples
         for user in self.selected_users:
-            self.add_parameters_with_packet_loss(user, user.train_samples / total_train, packet_loss)
+            self.add_parameters_with_packet_loss(user, user.train_samples / total_train)
 
 
 

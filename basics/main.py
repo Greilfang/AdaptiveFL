@@ -15,7 +15,7 @@ import torch
 torch.manual_seed(0)
 
 def main(dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_glob_iters,
-         local_epochs, optimizer, numusers, K, personal_learning_rate, times, gpu, selected_rate,packet_loss):
+         local_epochs, optimizer, numusers, K, personal_learning_rate, times, gpu, selected_rate,packet_loss,threshold):
 
     # Get device status: Check GPU or CPU
     device = torch.device("cuda:{}".format(gpu) if torch.cuda.is_available() and gpu != -1 else "cpu")
@@ -44,7 +44,7 @@ def main(dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_
         # select algorithm
         # dataset is passed in the function
         if(algorithm == "FedAvg"):
-            server = FedAvg(device, dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_glob_iters, local_epochs, optimizer, numusers, i, selected_rate, packet_loss)
+            server = FedAvg(device, dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_glob_iters, local_epochs, optimizer, numusers, i, selected_rate, packet_loss,threshold)
         
         if(algorithm == "pFedMe"):
             server = pFedMe(device, dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_glob_iters, local_epochs, optimizer, numusers, K, personal_learning_rate, i, selected_rate,packet_loss)
@@ -81,7 +81,8 @@ if __name__ == "__main__":
     parser.add_argument("--times", type=int, default=1, help="running time")
     parser.add_argument("--gpu", type=int, default=-1, help="Which GPU to run the experiments, -1 mean CPU, 0,1,2 for GPU")
     parser.add_argument("--selected_rate",type=float, default=1.0, help="The proption of clients that meet the latency requirement" )
-    parser.add_argument("--packet_loss",default='adaptive',help="the packet loss rate")
+    parser.add_argument("--packet_loss",type=str,default='adaptive', help="the packet loss rate")
+    parser.add_argument("--threshold",default=400,help="The threshold to calculate packet loss")
     args = parser.parse_args()
 
     print("=" * 80)
@@ -97,6 +98,7 @@ if __name__ == "__main__":
     print("Local Model       : {}".format(args.model))
     print("Selection Rate       : {}".format(args.selected_rate))
     print("Packet Loss       : {}".format(args.packet_loss))
+    print("Latency Threshold       : {}".format(args.threshold))
     print("=" * 80)
 
     main(
@@ -116,5 +118,6 @@ if __name__ == "__main__":
         times = args.times,
         gpu=args.gpu,
         selected_rate=args.selected_rate,
-        packet_loss = args.packet_loss
+        packet_loss = args.packet_loss,
+        threshold = args.threshold
         )

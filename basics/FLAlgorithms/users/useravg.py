@@ -10,9 +10,9 @@ from FLAlgorithms.users.userbase import User
 
 class UserAVG(User):
     def __init__(self, device, numeric_id, train_data, test_data, model, batch_size, learning_rate, beta, lamda,
-                 local_epochs, optimizer,packet_loss):
+                 local_epochs, optimizer,is_eligible,packet_loss,threshold):
         super().__init__(device, numeric_id, train_data, test_data, model[0], batch_size, learning_rate, beta, lamda,
-                         local_epochs,packet_loss)
+                         local_epochs, is_eligible,packet_loss, threshold)
 
         if(model[1] == "Mclr_CrossEntropy"):
             self.loss = nn.CrossEntropyLoss()

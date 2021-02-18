@@ -14,11 +14,14 @@ class TransPacketSettings:
     def __init__(self):
         pass
 
+    def set_loginoraml_latency(self):
+        return np.random.lognormal(5, 1, 1)
+
 class User:
     """
     Base class for users in federated learning.
     """
-    def __init__(self, device, id, train_data, test_data, model, batch_size = 0, learning_rate = 0, beta = 0 , lamda = 0, local_epochs = 0, is_eligible=True, packet_loss = "adaptive"):
+    def __init__(self, device, id, train_data, test_data, model, batch_size = 0, learning_rate = 0, beta = 0 , lamda = 0, local_epochs = 0, is_eligible=True, packet_loss = "adaptive",threshold=300):
 
         self.device = device
         self.model = copy.deepcopy(model)
@@ -37,21 +40,24 @@ class User:
         self.trainloaderfull = DataLoader(train_data, self.train_samples)
         self.iter_trainloader = iter(self.trainloader)
         self.iter_testloader = iter(self.testloader)
+        self.threshold = threshold
 
         # choose the packet loss mode
         if packet_loss == "adaptive":
-            self.packet_loss = TransPacketSettings().set_loginoraml_packet_loss()
+            latency = TransPacketSettings().set_loginoraml_latency()[0]
+            self.packet_loss = float(round(1-self.threshold/latency,2)) if latency > self.threshold else 0.0
+            print("User:{} Latancy:{}, Packet Loss:{}".format(id,latency,self.packet_loss))
         else:
             self.packet_loss = packet_loss
-
-
-
-
 
         # those parameters are for persionalized federated learing.
         self.local_model = copy.deepcopy(list(self.model.parameters()))
         self.persionalized_model = copy.deepcopy(list(self.model.parameters()))
         self.persionalized_model_bar = copy.deepcopy(list(self.model.parameters()))
+    
+    def reset_packet_loss(self):
+        latency = TransPacketSettings().set_loginoraml_latency()[0]
+        self.packet_loss = float(round(1-self.threshold/latency,2)) if latency > self.threshold else 0.0
     
     def set_parameters(self, model):
         for old_param, new_param, local_param in zip(self.model.parameters(), model.parameters(), self.local_model):
