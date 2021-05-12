@@ -11,17 +11,18 @@ from FLAlgorithms.servers.serverpFedMe import pFedMe
 from FLAlgorithms.servers.serverperavg import PerAvg
 from FLAlgorithms.trainmodel.models import *
 from utils.plot_utils import *
+
 import torch
 torch.manual_seed(0)
 
 def main(dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_glob_iters,
-         local_epochs, optimizer, numusers, K, personal_learning_rate, times, gpu, selected_rate,packet_loss,threshold):
+         local_epochs, optimizer, numusers, K, personal_learning_rate, times, gpu, selected_rate,packet_loss, threshold, sketched):
 
     # Get device status: Check GPU or CPU
     device = torch.device("cuda:{}".format(gpu) if torch.cuda.is_available() and gpu != -1 else "cpu")
 
     for i in range(times):
-        print("---------------Running time:------------",i)
+        print("---------------Running time:-------------",i)
         # Generate model
         if(model == "mclr"):
             if(dataset == "Mnist"):
@@ -44,15 +45,15 @@ def main(dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_
         # select algorithm
         # dataset is passed in the function
         if(algorithm == "FedAvg"):
-            server = FedAvg(device, dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_glob_iters, local_epochs, optimizer, numusers, i, selected_rate, packet_loss,threshold)
+            server = FedAvg(device, dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_glob_iters, local_epochs, optimizer, numusers, i, selected_rate, packet_loss,threshold, sketched)
         
-        if(algorithm == "pFedMe"):
-            server = pFedMe(device, dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_glob_iters, local_epochs, optimizer, numusers, K, personal_learning_rate, i, selected_rate,packet_loss)
+        # if(algorithm == "pFedMe"):
+        #     server = pFedMe(device, dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_glob_iters, local_epochs, optimizer, numusers, K, personal_learning_rate, i, selected_rate,packet_loss)
 
-        if(algorithm == "PerAvg"):
-            server = PerAvg(device, dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_glob_iters, local_epochs, optimizer, numusers, i,selected_rate,packet_loss)
+        # if(algorithm == "PerAvg"):
+        #     server = PerAvg(device, dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_glob_iters, local_epochs, optimizer, numusers, i,selected_rate,packet_loss)
 
-        server.train()
+        server.fusion_train(cmfl=True)
         server.test()
 
     # Average data 
@@ -60,18 +61,18 @@ def main(dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_
         algorithm == "PerAvg_p"
     if(algorithm == "pFedMe"):
         pass
-    #     average_data(num_users=numusers, loc_ep1=local_epochs, Numb_Glob_Iters=num_glob_iters, lamb=lamda,learning_rate=learning_rate, beta = beta, algorithms="pFedMe_p", batch_size=batch_size, dataset=dataset, k = K, personal_learning_rate = personal_learning_rate,times = times)
+    # average_data(num_users=numusers, loc_ep1=local_epochs, Numb_Glob_Iters=num_glob_iters, lamb=lamda,learning_rate=learning_rate, beta = beta, algorithms="pFedMe_p", batch_size=batch_size, dataset=dataset, k = K, personal_learning_rate = personal_learning_rate,times = times)
     # average_data(num_users=numusers, loc_ep1=local_epochs, Numb_Glob_Iters=num_glob_iters, lamb=lamda,learning_rate=learning_rate, beta = beta, algorithms=algorithm, batch_size=batch_size, dataset=dataset, k = K, personal_learning_rate = personal_learning_rate,times = times)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default="Synthetic", choices=["Mnist", "Synthetic", "Cifar10"])
+    parser.add_argument("--dataset", type=str, default="Mnist", choices=["Mnist", "Synthetic", "Cifar10"])
     parser.add_argument("--model", type=str, default="dnn", choices=["dnn", "mclr", "cnn"])
-    parser.add_argument("--batch_size", type=int, default=20)
+    parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--learning_rate", type=float, default=0.005, help="Local learning rate")
     parser.add_argument("--beta", type=float, default=1.0, help="Average moving parameter for pFedMe, or Second learning rate of Per-FedAvg")
     parser.add_argument("--lamda", type=int, default=15, help="Regularization term")
-    parser.add_argument("--num_global_iters", type=int, default=50)
+    parser.add_argument("--num_global_iters", type=int, default=100)
     parser.add_argument("--local_epochs", type=int, default=20)
     parser.add_argument("--optimizer", type=str, default="SGD")
     parser.add_argument("--algorithm", type=str, default="FedAvg",choices=["pFedMe", "PerAvg", "FedAvg"]) 
@@ -82,7 +83,8 @@ if __name__ == "__main__":
     parser.add_argument("--gpu", type=int, default=-1, help="Which GPU to run the experiments, -1 mean CPU, 0,1,2 for GPU")
     parser.add_argument("--selected_rate",type=float, default=1.0, help="The proption of clients that meet the latency requirement" )
     parser.add_argument("--packet_loss",type=str,default='adaptive', help="the packet loss rate")
-    parser.add_argument("--threshold",default=400,help="The threshold to calculate packet loss")
+    parser.add_argument("--threshold",default=500,help="The threshold to calculate packet loss")
+    parser.add_argument("--sketched",default=False, help="Whether use sketch to help compress gradients")
     args = parser.parse_args()
 
     print("=" * 80)
@@ -99,6 +101,7 @@ if __name__ == "__main__":
     print("Selection Rate       : {}".format(args.selected_rate))
     print("Packet Loss       : {}".format(args.packet_loss))
     print("Latency Threshold       : {}".format(args.threshold))
+    print("Count Sketch       : {}".format(args.sketched))
     print("=" * 80)
 
     main(
@@ -119,5 +122,6 @@ if __name__ == "__main__":
         gpu=args.gpu,
         selected_rate=args.selected_rate,
         packet_loss = args.packet_loss,
-        threshold = args.threshold
+        threshold = args.threshold,
+        sketched = args.sketched
         )

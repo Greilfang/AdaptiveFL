@@ -8,18 +8,17 @@ from FLAlgorithms.users.userbase import User
 
 # Implementation for FedAvg clients
 
+
 class UserAVG(User):
     def __init__(self, device, numeric_id, train_data, test_data, model, batch_size, learning_rate, beta, lamda,
                  local_epochs, optimizer,is_eligible,packet_loss,threshold):
         super().__init__(device, numeric_id, train_data, test_data, model[0], batch_size, learning_rate, beta, lamda,
                          local_epochs, is_eligible,packet_loss, threshold)
-
-        if(model[1] == "Mclr_CrossEntropy"):
-            self.loss = nn.CrossEntropyLoss()
-        else:
-            self.loss = nn.NLLLoss()
+        
+        self.loss = nn.CrossEntropyLoss() if model[1] == "Mclr_CrossEntropy" else nn.NLLLoss()
 
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
+
 
     def set_grads(self, new_grads):
         if isinstance(new_grads, nn.Parameter):
@@ -28,10 +27,15 @@ class UserAVG(User):
         elif isinstance(new_grads, list):
             for idx, model_grad in enumerate(self.model.parameters()):
                 model_grad.data = new_grads[idx]
+            
 
-    def train(self, epochs):
+    def train(self, epochs, pruning=False, cmfl=False):
         LOSS = 0
         self.model.train()
+        if pruning: pass
+        if cmfl:
+            self.clone_model_paramenter(self.model.parameters(), self.last_user_updates)
+
         for epoch in range(1, self.local_epochs + 1):
             self.model.train()
             X, y = self.get_next_train_batch()
@@ -40,6 +44,13 @@ class UserAVG(User):
             loss = self.loss(output, y)
             loss.backward()
             self.optimizer.step()
-            self.clone_model_paramenter(self.model.parameters(), self.local_model)
+
+        if cmfl:
+            self.calculate_weight_updates()
+            self.update_relavance()
+        self.clone_model_paramenter(self.model.parameters(), self.local_model)
         return LOSS
+    
+
+
 

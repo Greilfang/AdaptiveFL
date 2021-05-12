@@ -3,7 +3,34 @@ import os
 import numpy as np
 import h5py
 from utils.model_utils import Metrics
+import random
 import copy
+from functools import cmp_to_key
+
+def user_cmp(a,b):
+    if a.relevant_rate > b.relevant_rate:return -1
+    elif a.relevant_rate < b.relevant_rate:return 1
+    else:return 0
+    
+# The component to save the weight of participated users
+class WeightSlots:
+    def __init__(self,capacity):
+        self.capacity = capacity
+        self.user_map = dict()
+    
+    def update_weight(self, mid, weight):
+        if len(self.user_map) == self.capacity:
+            tid = random.sample(self.user_map.keys(), 1)[0]
+            del self.user_map[tid]
+        self.user_map[mid] = list(weight)
+
+    def contain(self,mid):
+        return True if (mid in self.user_map) else False
+
+    def present(self,mid):
+        return self.user_map[mid]
+
+
 
 class Server:
     def __init__(self, device, dataset,algorithm, model, batch_size, learning_rate ,beta, lamda,
@@ -18,8 +45,8 @@ class Server:
         self.learning_rate = learning_rate
         self.total_train_samples = 0
         self.model = copy.deepcopy(model)
-        self.users = []
-        self.selected_users = []
+        self.users = list()
+        self.selected_users = list()
         self.num_users = num_users
         self.beta = beta
         self.lamda = lamda
@@ -27,11 +54,27 @@ class Server:
         self.rs_train_acc, self.rs_train_loss, self.rs_glob_acc,self.rs_train_acc_per, self.rs_train_loss_per, self.rs_glob_acc_per = [], [], [], [], [], []
         self.times = times
         self.selected_rate = selected_rate
+        self.history_parameters = None
+
+        '''Weight slots for history uploaded client model'''
+        self.weight_slots = WeightSlots(capacity=num_users)
         # Initialize the server's grads to zeros
         #for param in self.model.parameters():
         #    param.data = torch.zeros_like(param.data)
         #    param.grad = torch.zeros_like(param.data)
         #self.send_parameters()
+        '''Updated paramters for two rounds'''
+        self.weight_updates = copy.deepcopy(model)
+        for param in self.weight_updates.parameters():
+            param.data = torch.zeros_like(param.data)
+            # print("param_data:", param.data)
+
+
+
+    def get_parameters(self):
+        for param in self.model.parameters():
+            param.detach()
+        return self.model.parameters()
         
     def aggregate_grads(self):
         assert (self.users is not None and len(self.users) > 0)
@@ -50,6 +93,17 @@ class Server:
         for user in self.users:
             user.set_parameters(self.model)
 
+    def send_weight_updates(self):
+        assert (self.selected_users is not None and len(self.selected_users)>0)
+        # for param in self.weight_updates.parameters():
+        #     param.data = torch.zeros_like(param.data)
+            #print("param_data:", param.data)
+        #print("parameters:", self.weight_updates)
+        for user in self.selected_users:
+            user.set_weight_updates(self.weight_updates)
+
+
+
     def send_eligible_parameters(self):
         assert (self.users is not None and len(self.users) > 0)
         for user in self.users:
@@ -57,19 +111,42 @@ class Server:
                 user.set_parameters(self.model)
 
     def add_parameters_with_packet_loss(self, user, ratio):
-        model = self.model.parameters()
         #print(type(user.packet_loss))
         for server_param, user_param in zip(self.model.parameters(), user.get_parameters()):
             mask = torch.full(user_param.size(), 1-user.packet_loss)
-            #print(mask)
             bernoulli_mask = torch.bernoulli(mask)
             server_param.data = server_param.data + user_param.data.clone() * bernoulli_mask * ratio / (1-user.packet_loss)
     
+    def add_parameters_with_history(self, user, ratio):
+        for temp_param, hist_param, server_param, user_param in zip(self.temp_params, self.history_parameters, self.model.parameters(), user.get_parameters()):
+            mask = torch.full(user_param.size(), 1-user.packet_loss)
+            bernoulli_mask = torch.bernoulli(mask)
+            
+            server_param.data = server_param.data + user_param.data.clone() * bernoulli_mask * ratio
+            temp_param.data = torch.where(temp_param.data==0, (1-bernoulli_mask)*hist_param.data.clone(), temp_param.data)
+                
+    def add_parameters_with_slots(self, user, ratio):
+        chosen_history_parameters = self.weight_slots.present(user.id) if self.weight_slots.contain(user.id) else self.history_parameters
+        for temp_param, hist_param, server_param, user_param in zip(self.temp_params,chosen_history_parameters,self.model.parameters(),user.get_parameters()):
+            mask = torch.full(user_param.size(),1-user.packet_loss)
+            bernoulli_mask = torch.bernoulli(mask)
+
+            server_param.data = server_param.data + user_param.data.clone() * bernoulli_mask * ratio
+            temp_param.data = torch.where(temp_param.data==0, (1-bernoulli_mask)*hist_param.data.clone(), temp_param.data)
+
+        if user.packet_loss < 0.02:
+            self.weight_slots.update_weight(user.id, user.get_parameters())
+
+   
     def add_parameters(self, user, ratio):
-        model = self.model.parameters()
         for server_param, user_param in zip(self.model.parameters(), user.get_parameters()):
             server_param.data = server_param.data + user_param.data.clone() * ratio
 
+    def calculate_weight_updates(self):
+        for weight, hist_param, cur_param in zip(self.weight_updates.parameters(),self.history_parameters,self.model.parameters()):
+            weight.data = cur_param.data - hist_param.data
+
+    
     def aggregate_parameters(self):
         assert (self.users is not None and len(self.users) > 0)
         for param in self.model.parameters():
@@ -91,10 +168,61 @@ class Server:
         for user in self.selected_users:
             self.add_parameters_with_packet_loss(user, user.train_samples / total_train)
 
+    def aggregate_parameters_with_history(self):
+        assert (self.users is not None and len(self.users)>0)
+        # Do not set parameters to zero first
 
+        total_train = 0
+        for user in self.selected_users:
+            total_train += user.train_samples
+        
+        self.history_parameters = copy.deepcopy(list(self.model.parameters()))
+        self.temp_params = copy.deepcopy(self.history_parameters)
 
+        for model_param,temp_param in zip(self.model.parameters(),self.temp_params):
+            model_param.data = torch.zeros_like(model_param.data)
+            temp_param.data = torch.zeros_like(temp_param.data)
 
+        for user in self.selected_users:
+            self.add_parameters_with_history(user, user.train_samples / total_train)
 
+        for server_param, temp_param in zip(self.model.parameters(),self.temp_params):
+            server_param.data = torch.where(temp_param == 0.0, server_param.data, temp_param.data.clone())
+            # server_param.data = server_param.data + temp_param.data.clone()
+    
+    def aggregate_parameters_with_slots(self, cmfl = True):
+        '''
+        @params:
+            cmfl: whether to act communication mitigation federated learning (cmfl)
+        '''
+        assert (self.users is not None and len(self.users)>0)
+        if cmfl:
+            # first set relavant_rate = 0.5
+            print("original_len: {}".format(len(self.selected_users)))
+            # self.selected_users = list(filter(lambda x: x.relevant_rate > 0.2, self.selected_users))
+            #self.selected_users.sort(cmp=None, key=lambda x:x.relevant_rate, reverse=True)
+            self.selected_users = sorted(self.selected_users, key = cmp_to_key(user_cmp))
+            self.selected_users=self.selected_users[-5:]
+
+        total_train = 0
+        for user in self.selected_users:
+            total_train += user.train_samples
+
+        # history parameters saves the global model in the previous round
+        self.history_parameters = copy.deepcopy(list(self.model.parameters()))
+        self.temp_params = copy.deepcopy(self.history_parameters)
+
+        # clear temp_params before each aggregation
+        for model_param, temp_param in zip(self.model.parameters(),self.temp_params):
+            model_param.data = torch.zeros_like(model_param.data)
+            temp_param.data = torch.zeros_like(temp_param.data)
+
+        for user in self.selected_users:
+            self.add_parameters_with_slots(user, user.train_samples / total_train)
+        
+        for server_param, temp_param in zip(self.model.parameters(), self.temp_params):
+            server_param.data = torch.where(temp_param == 0.0, server_param.data, temp_param.data.clone())
+    
     def global_aggregate_parameters(self):
         assert (self.users is not None and len(self.users) > 0)
 
@@ -102,8 +230,8 @@ class Server:
         previous_param = copy.deepcopy(list(self.model.parameters()))
         for param in self.model.parameters():
             param.data = torch.zeros_like(param.data)
+        
         total_train = 0
-        #if(self.num_users = self.to)
         for user in self.users:
             total_train += user.train_samples
 
@@ -112,7 +240,7 @@ class Server:
 
         # aaggregate avergage model with previous model using parameter beta 
         for pre_param, param in zip(previous_param, self.model.parameters()):
-            param.data = (1 - self.beta) * pre_param.data + self.beta*param.data
+            param.data = (1 - self.beta) * pre_param.data + self.beta * param.data
 
     def save_model(self):
         model_path = os.path.join("models", self.dataset)
@@ -156,11 +284,12 @@ class Server:
             list of selected clients objects
         '''
         if num_users >= len(self.users)*self.selected_rate:
-            print("All users are selcted")
-        if self.selected_rate == 1:
-            print("All users may be selected")
+            print("All users are selected")
+        # if self.selected_rate == 1:
+        #     print("All users may be selected")
         num_users = min(num_users,len(self.users))
         eid = int(len(self.users)*self.selected_rate)
+        np.random.seed(round)
         return np.random.choice(self.users[:eid],num_users,replace=False)
     
 
@@ -267,8 +396,8 @@ class Server:
     def test(self):
         '''tests self.latest_model on given clients
         '''
-        num_samples = []
-        tot_correct = []
+        num_samples = list()
+        tot_correct = list()
         losses = []
         for c in self.users:
             ct, ns = c.test()
@@ -279,8 +408,8 @@ class Server:
         return ids, num_samples, tot_correct
 
     def train_error_and_loss(self):
-        num_samples = []
-        tot_correct = []
+        num_samples = list()
+        tot_correct = list()
         losses = []
         for c in self.users:
             ct, cl, ns = c.train_error_and_loss() 
@@ -360,7 +489,7 @@ class Server:
 
         # set local model back to client for training process.
         for c in self.users:
-            c.update_parameters(c.local_model)
+            c.update_parameters(c.h)
 
         glob_acc = np.sum(stats[2])*1.0/np.sum(stats[1])
         train_acc = np.sum(stats_train[2])*1.0/np.sum(stats_train[1])

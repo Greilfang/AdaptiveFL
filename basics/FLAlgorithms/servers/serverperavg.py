@@ -36,7 +36,7 @@ class PerAvg(Server):
             user.set_grads(grads)
 
     def train(self):
-        loss = []
+        loss = list()
         for glob_iter in range(self.num_glob_iters):
             print("-------------Round number: ",glob_iter, " -------------")
             # send all parameter for users 

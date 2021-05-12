@@ -25,6 +25,7 @@ class User:
 
         self.device = device
         self.model = copy.deepcopy(model)
+        self.updated_weight = None # calculate the uploaded weights
         self.id = id  # integer
         self.train_samples = len(train_data)
         self.test_samples = len(test_data)
@@ -40,7 +41,13 @@ class User:
         self.trainloaderfull = DataLoader(train_data, self.train_samples)
         self.iter_trainloader = iter(self.trainloader)
         self.iter_testloader = iter(self.testloader)
+        '''variants for threshold-based loss-tolerant transmission'''
         self.threshold = threshold
+        '''variants for communication mitigated federated learning (cmfl)'''
+        self.last_server_updates= copy.deepcopy(list(self.model.parameters()))
+        self.last_user_updates = copy.deepcopy(list(self.model.parameters()))
+        self.relevant_rate = 0
+
 
         # choose the packet loss mode
         if packet_loss == "adaptive":
@@ -52,18 +59,37 @@ class User:
 
         # those parameters are for persionalized federated learing.
         self.local_model = copy.deepcopy(list(self.model.parameters()))
+        # varients for personalized federated learing.
         self.persionalized_model = copy.deepcopy(list(self.model.parameters()))
         self.persionalized_model_bar = copy.deepcopy(list(self.model.parameters()))
     
     def reset_packet_loss(self):
         latency = TransPacketSettings().set_loginoraml_latency()[0]
         self.packet_loss = float(round(1-self.threshold/latency,2)) if latency > self.threshold else 0.0
+
+    def calculate_weight_updates(self):
+        for update,param in zip(self.last_user_updates,self.model.parameters()):
+            update.data = update.data - param.data
+    
+    def update_relavance(self):
+        n_params, n_relavant_params = 0, 0
+        for server_update, user_update in zip(self.last_server_updates, self.last_user_updates):
+            n_params = n_params + server_update.data.numel()
+            mul_data = torch.sign(torch.mul(server_update.data, user_update.data)).data
+            n_relavant_params = n_relavant_params + int(torch.sum(mul_data>0))
+        self.relevant_rate = n_relavant_params / n_params
+
     
     def set_parameters(self, model):
         for old_param, new_param, local_param in zip(self.model.parameters(), model.parameters(), self.local_model):
             old_param.data = new_param.data.clone()
             local_param.data = new_param.data.clone()
         #self.local_weight_updated = copy.deepcopy(self.optimizer.param_groups[0]['params'])
+    
+    def set_weight_updates(self,updates):
+        for server_update, update in zip(self.last_server_updates, updates.parameters()):
+            #print("update:",update)
+            server_update.data = update.data.clone()
 
     def get_parameters(self):
         for param in self.model.parameters():
@@ -90,6 +116,8 @@ class User:
             else:
                 grads.append(param.grad.data)
         return grads
+
+
 
     def test(self):
         self.model.eval()
