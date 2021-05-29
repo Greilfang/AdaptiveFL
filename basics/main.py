@@ -12,6 +12,12 @@ from FLAlgorithms.servers.serverperavg import PerAvg
 from FLAlgorithms.trainmodel.models import *
 from utils.plot_utils import *
 
+# import streamlit as st
+# # To make things easier later, we're also importing numpy and pandas for
+# # working with sample data.
+# import numpy as np
+# import pandas as pd
+
 import torch
 torch.manual_seed(0)
 
@@ -65,6 +71,7 @@ def main(dataset, algorithm, model, batch_size, learning_rate, beta, lamda, num_
     # average_data(num_users=numusers, loc_ep1=local_epochs, Numb_Glob_Iters=num_glob_iters, lamb=lamda,learning_rate=learning_rate, beta = beta, algorithms=algorithm, batch_size=batch_size, dataset=dataset, k = K, personal_learning_rate = personal_learning_rate,times = times)
 
 if __name__ == "__main__":
+    st.title("Data Visualizaton for Loss Tolerant Federated Learning on Wearables")
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default="Mnist", choices=["Mnist", "Synthetic", "Cifar10"])
     parser.add_argument("--model", type=str, default="dnn", choices=["dnn", "mclr", "cnn"])
